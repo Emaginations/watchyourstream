@@ -1,5 +1,6 @@
 """
-2026-06-04 try1
+2026-06-04 try1 初次构建
+2026-06-05 try2 修改为只按白名单流转模式，取消黑名单
 """
 
 from maibot_sdk import API, Field, MaiBotPlugin, MessageGateway, PluginConfigBase, PluginContext, Tool, Command, EventHandler, HookHandler
@@ -59,23 +60,23 @@ class BasicConfig(PluginConfigBase):
     )
 
 
-class StreamListConfig(PluginConfigBase):
-    """聊天流列表设置。"""
+class WhitelistStreamsConfig(PluginConfigBase):
+    """聊天流白名单设置。只有白名单中的聊天流才会参与消息流转。"""
     
-    __ui_label__: ClassVar[str] = "聊天流列表"
+    __ui_label__: ClassVar[str] = "聊天流白名单"
     __ui_order__: ClassVar[int] = 1
     
-    allowed_streams: List[str] = Field(
+    whitelist_streams: List[str] = Field(
         default_factory=list,
-        description="允许流转的聊天流ID列表",
+        description="白名单聊天流ID列表，只有这些聊天流中的消息会被转发，且只会转发到这些聊天流",
         json_schema_extra={
-            "label": "允许的聊天流",
-            "hint": "消息只会在这些聊天流中流转，支持群聊和私聊",
+            "label": "白名单聊天流",
+            "hint": "只有白名单中的聊天流才会参与流转（来源和目标都必须是白名单中的聊天流）",
             "i18n": _schema_i18n(
-                label_en="Allowed streams",
-                label_ja="許可されたストリーム",
-                hint_en="Messages will only flow within these chat streams",
-                hint_ja="メッセージはこれらのチャットストリーム内でのみ流れます",
+                label_en="Whitelist streams",
+                label_ja="ホワイトリストストリーム",
+                hint_en="Only whitelisted chat streams will participate in message flow (both source and target must be in whitelist)",
+                hint_ja="ホワイトリストに登録されたチャットストリームのみがメッセージフローに参加します（ソースとターゲットの両方がホワイトリストにある必要があります）",
                 placeholder_en="Enter stream ID",
                 placeholder_ja="ストリームIDを入力",
             ),
@@ -84,21 +85,21 @@ class StreamListConfig(PluginConfigBase):
     )
 
 
-class WhitelistConfig(PluginConfigBase):
-    """白名单设置。"""
+class UserWhitelistConfig(PluginConfigBase):
+    """用户白名单设置。"""
     
-    __ui_label__: ClassVar[str] = "白名单"
+    __ui_label__: ClassVar[str] = "用户白名单"
     __ui_order__: ClassVar[int] = 2
     
-    whitelist_enabled: bool = Field(
+    user_whitelist_enabled: bool = Field(
         default=False,
-        description="是否启用白名单",
+        description="是否启用用户白名单",
         json_schema_extra={
-            "label": "启用白名单",
+            "label": "启用用户白名单",
             "hint": "启用后，白名单中的用户消息不会被转发",
             "i18n": _schema_i18n(
-                label_en="Enable whitelist",
-                label_ja="ホワイトリストを有効化",
+                label_en="Enable user whitelist",
+                label_ja="ユーザーホワイトリストを有効化",
                 hint_en="When enabled, messages from whitelisted users will not be forwarded",
                 hint_ja="有効にすると、ホワイトリストに登録されたユーザーのメッセージは転送されません",
             ),
@@ -108,54 +109,13 @@ class WhitelistConfig(PluginConfigBase):
     
     whitelist_users: List[str] = Field(
         default_factory=list,
-        description="白名单用户ID列表",
+        description="用户白名单列表",
         json_schema_extra={
             "label": "白名单用户",
-            "hint": "白名单中的用户消息不会被转发",
+            "hint": "这些用户的消息不会被转发",
             "i18n": _schema_i18n(
                 label_en="Whitelist users",
                 label_ja="ホワイトリストユーザー",
-                hint_en="Messages from these users will not be forwarded",
-                hint_ja="これらのユーザーからのメッセージは転送されません",
-                placeholder_en="Enter user ID",
-                placeholder_ja="ユーザーIDを入力",
-            ),
-            "order": 1,
-        },
-    )
-
-
-class BlacklistConfig(PluginConfigBase):
-    """黑名单设置。"""
-    
-    __ui_label__: ClassVar[str] = "黑名单"
-    __ui_order__: ClassVar[int] = 3
-    
-    blacklist_enabled: bool = Field(
-        default=False,
-        description="是否启用黑名单",
-        json_schema_extra={
-            "label": "启用黑名单",
-            "hint": "启用后，黑名单中的用户消息不会被转发",
-            "i18n": _schema_i18n(
-                label_en="Enable blacklist",
-                label_ja="ブラックリストを有効化",
-                hint_en="When enabled, messages from blacklisted users will not be forwarded",
-                hint_ja="有効にすると、ブラックリストに登録されたユーザーのメッセージは転送されません",
-            ),
-            "order": 0,
-        },
-    )
-    
-    blacklist_users: List[str] = Field(
-        default_factory=list,
-        description="黑名单用户ID列表",
-        json_schema_extra={
-            "label": "黑名单用户",
-            "hint": "黑名单中的用户消息不会被转发",
-            "i18n": _schema_i18n(
-                label_en="Blacklist users",
-                label_ja="ブラックリストユーザー",
                 hint_en="Messages from these users will not be forwarded",
                 hint_ja="これらのユーザーからのメッセージは転送されません",
                 placeholder_en="Enter user ID",
@@ -170,7 +130,7 @@ class KeywordFilterConfig(PluginConfigBase):
     """关键词过滤设置。"""
     
     __ui_label__: ClassVar[str] = "关键词过滤"
-    __ui_order__: ClassVar[int] = 4
+    __ui_order__: ClassVar[int] = 3
     
     keyword_filter_enabled: bool = Field(
         default=False,
@@ -211,7 +171,7 @@ class ReplyConfig(PluginConfigBase):
     """回复消息设置。"""
     
     __ui_label__: ClassVar[str] = "回复消息设置"
-    __ui_order__: ClassVar[int] = 5
+    __ui_order__: ClassVar[int] = 4
     
     forward_reply: bool = Field(
         default=True,
@@ -233,9 +193,8 @@ class ReplyConfig(PluginConfigBase):
 class WatchYourStreamConfig(PluginConfigBase):
     """配置大纲"""
     basic: BasicConfig = Field(default_factory=BasicConfig)
-    stream_list: StreamListConfig = Field(default_factory=StreamListConfig)
-    whitelist: WhitelistConfig = Field(default_factory=WhitelistConfig)
-    blacklist: BlacklistConfig = Field(default_factory=BlacklistConfig)
+    whitelist_streams: WhitelistStreamsConfig = Field(default_factory=WhitelistStreamsConfig)
+    user_whitelist: UserWhitelistConfig = Field(default_factory=UserWhitelistConfig)
     keyword_filter: KeywordFilterConfig = Field(default_factory=KeywordFilterConfig)
     reply: ReplyConfig = Field(default_factory=ReplyConfig)
 
@@ -284,11 +243,11 @@ class WatchYourStreamPlugin(MaiBotPlugin):
         功能：
         1. 检查插件是否启用
         2. 获取消息的聊天流ID和用户ID
-        3. 检查消息来源是否在允许的聊天流列表中
-        4. 检查用户是否在白名单/黑名单中
+        3. 检查消息来源是否在聊天流白名单中
+        4. 检查用户是否在用户白名单中
         5. 检查消息是否包含过滤关键词
         6. 检查是否为回复消息（根据配置决定是否转发）
-        7. 将符合条件的消息转发到其他允许的聊天流
+        7. 将符合条件的消息转发到白名单中的其他聊天流（排除来源）
         """
         pass
     
@@ -303,8 +262,8 @@ class WatchYourStreamPlugin(MaiBotPlugin):
         
         功能：
         1. 获取当前配置状态
-        2. 返回允许的聊天流列表
-        3. 返回白名单/黑名单/关键词过滤状态
+        2. 返回聊天流白名单列表
+        3. 返回用户白名单/关键词过滤状态
         4. 记录日志
         """
         pass
@@ -316,7 +275,7 @@ class WatchYourStreamPlugin(MaiBotPlugin):
         
         功能：
         1. 获取当前聊天流ID
-        2. 发送测试消息到其他允许的聊天流
+        2. 发送测试消息到白名单中的其他聊天流
         3. 记录日志
         """
         pass
@@ -326,25 +285,25 @@ class WatchYourStreamPlugin(MaiBotPlugin):
     # ========================================================================
     
     @Tool(
-        "get_allowed_streams",
-        brief_description="获取允许流转的聊天流列表",
-        detailed_description="返回当前配置中允许消息流转的所有聊天流ID列表",
+        "get_whitelist_streams",
+        brief_description="获取聊天流白名单列表",
+        detailed_description="返回当前配置中允许参与流转的聊天流ID列表（白名单）",
     )
-    async def tool_get_allowed_streams(self, **kwargs) -> dict:
+    async def tool_get_whitelist_streams(self, **kwargs) -> dict:
         """
-        获取允许流转的聊天流列表
+        获取聊天流白名单列表
         
         返回：
         - success: 是否成功
-        - streams: 允许的聊天流ID列表
+        - streams: 白名单聊天流ID列表
         - count: 聊天流数量
         """
         pass
     
     @Tool(
         "check_user_in_whitelist",
-        brief_description="检查用户是否在白名单中",
-        detailed_description="根据用户ID判断该用户是否在白名单中",
+        brief_description="检查用户是否在用户白名单中",
+        detailed_description="根据用户ID判断该用户是否在用户白名单中",
         parameters=[
             ToolParameterInfo(
                 name="user_id",
@@ -354,42 +313,16 @@ class WatchYourStreamPlugin(MaiBotPlugin):
             ),
         ],
     )
-    async def tool_check_whitelist(self, user_id: str, **kwargs) -> dict:
+    async def tool_check_user_whitelist(self, user_id: str, **kwargs) -> dict:
         """
-        检查用户是否在白名单中
+        检查用户是否在用户白名单中
         
         参数：
         - user_id: 用户ID
         
         返回：
         - in_whitelist: 是否在白名单中
-        - whitelist_enabled: 白名单是否启用
-        """
-        pass
-    
-    @Tool(
-        "check_user_in_blacklist",
-        brief_description="检查用户是否在黑名单中",
-        detailed_description="根据用户ID判断该用户是否在黑名单中",
-        parameters=[
-            ToolParameterInfo(
-                name="user_id",
-                param_type=ToolParamType.STRING,
-                description="用户ID",
-                required=True,
-            ),
-        ],
-    )
-    async def tool_check_blacklist(self, user_id: str, **kwargs) -> dict:
-        """
-        检查用户是否在黑名单中
-        
-        参数：
-        - user_id: 用户ID
-        
-        返回：
-        - in_blacklist: 是否在黑名单中
-        - blacklist_enabled: 黑名单是否启用
+        - user_whitelist_enabled: 用户白名单是否启用
         """
         pass
     
@@ -447,9 +380,9 @@ class WatchYourStreamPlugin(MaiBotPlugin):
         pass
     
     @Tool(
-        "forward_message",
+        "forward_message_to_streams",
         brief_description="转发消息到指定聊天流",
-        detailed_description="将消息内容转发到指定的聊天流",
+        detailed_description="将消息内容转发到指定的聊天流（目标必须在白名单中）",
         parameters=[
             ToolParameterInfo(
                 name="target_stream_id",
@@ -471,7 +404,7 @@ class WatchYourStreamPlugin(MaiBotPlugin):
             ),
         ],
     )
-    async def tool_forward_message(
+    async def tool_forward_message_to_streams(
         self,
         target_stream_id: str,
         message_content: str,
@@ -510,7 +443,7 @@ class WatchYourStreamPlugin(MaiBotPlugin):
         
         功能：
         1. 检查插件是否启用
-        2. 判断当前消息是否需要流转处理
+        2. 判断当前消息是否需要流转处理（来源是否在白名单中）
         3. 可选：阻止消息继续处理（根据配置）
         
         返回：
@@ -563,3 +496,7 @@ class WatchYourStreamPlugin(MaiBotPlugin):
 def create_plugin():
     """创建插件实例"""
     return WatchYourStreamPlugin()
+
+
+# try
+#####构建过程详见NOREADME.md#####
