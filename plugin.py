@@ -1,6 +1,7 @@
 """
-2026-06-04 try1 初次构建
-2026-06-05 try2 修改为只按白名单流转模式，取消黑名单
+2026-06-04 try1
+2026-06-05 try2
+2026-06-05 try3
 """
 
 from maibot_sdk import API, Field, MaiBotPlugin, MessageGateway, PluginConfigBase, PluginContext, Tool, Command, EventHandler, HookHandler
@@ -41,161 +42,80 @@ def _schema_i18n(
 # WebUI插件控件生成
 # ============================================================================
 class BasicConfig(PluginConfigBase):
-    """基础设置。"""
-    
     __ui_label__: ClassVar[str] = "基础设置"
     __ui_order__: ClassVar[int] = 0
-    
-    enabled: bool = Field(
-        default=False,
-        description="是否启用聊天流转插件",
-        json_schema_extra={
-            "label": "插件开关",
-            "i18n": _schema_i18n(
-                label_en="Enable",
-                label_ja="プラグインを有効化",
-            ),
-            "order": 0,
-        },
-    )
-
+    enabled: bool = Field(default=False, description="是否启用聊天流转插件",
+        json_schema_extra={"label": "插件开关", "order": 0})
+    config_version: str = Field(default="1.0.0", description="配置版本",
+        json_schema_extra={"label": "配置版本", "order": 1})
 
 class WhitelistStreamsConfig(PluginConfigBase):
-    """聊天流白名单设置。只有白名单中的聊天流才会参与消息流转。"""
-    
     __ui_label__: ClassVar[str] = "聊天流白名单"
     __ui_order__: ClassVar[int] = 1
-    
-    whitelist_streams: List[str] = Field(
-        default_factory=list,
-        description="白名单聊天流ID列表，只有这些聊天流中的消息会被转发，且只会转发到这些聊天流",
-        json_schema_extra={
-            "label": "白名单聊天流",
-            "hint": "只有白名单中的聊天流才会参与流转（来源和目标都必须是白名单中的聊天流）",
-            "i18n": _schema_i18n(
-                label_en="Whitelist streams",
-                label_ja="ホワイトリストストリーム",
-                hint_en="Only whitelisted chat streams will participate in message flow (both source and target must be in whitelist)",
-                hint_ja="ホワイトリストに登録されたチャットストリームのみがメッセージフローに参加します（ソースとターゲットの両方がホワイトリストにある必要があります）",
-                placeholder_en="Enter stream ID",
-                placeholder_ja="ストリームIDを入力",
-            ),
-            "order": 0,
-        },
-    )
-
+    whitelist_streams: List[str] = Field(default_factory=list,
+        description="白名单聊天流ID列表，只有这些流参与流转",
+        json_schema_extra={"label": "白名单聊天流", "placeholder": "输入流ID", "order": 0})
 
 class UserWhitelistConfig(PluginConfigBase):
-    """用户白名单设置。"""
-    
     __ui_label__: ClassVar[str] = "用户白名单"
     __ui_order__: ClassVar[int] = 2
-    
-    user_whitelist_enabled: bool = Field(
-        default=False,
-        description="是否启用用户白名单",
-        json_schema_extra={
-            "label": "启用用户白名单",
-            "hint": "启用后，白名单中的用户消息不会被转发",
-            "i18n": _schema_i18n(
-                label_en="Enable user whitelist",
-                label_ja="ユーザーホワイトリストを有効化",
-                hint_en="When enabled, messages from whitelisted users will not be forwarded",
-                hint_ja="有効にすると、ホワイトリストに登録されたユーザーのメッセージは転送されません",
-            ),
-            "order": 0,
-        },
-    )
-    
-    whitelist_users: List[str] = Field(
-        default_factory=list,
-        description="用户白名单列表",
-        json_schema_extra={
-            "label": "白名单用户",
-            "hint": "这些用户的消息不会被转发",
-            "i18n": _schema_i18n(
-                label_en="Whitelist users",
-                label_ja="ホワイトリストユーザー",
-                hint_en="Messages from these users will not be forwarded",
-                hint_ja="これらのユーザーからのメッセージは転送されません",
-                placeholder_en="Enter user ID",
-                placeholder_ja="ユーザーIDを入力",
-            ),
-            "order": 1,
-        },
-    )
-
+    user_whitelist_enabled: bool = Field(default=False, description="启用用户白名单",
+        json_schema_extra={"label": "启用用户白名单", "order": 0})
+    whitelist_users: List[str] = Field(default_factory=list,
+        description="这些用户的消息不会触发流转",
+        json_schema_extra={"label": "白名单用户", "placeholder": "输入用户ID", "order": 1})
 
 class KeywordFilterConfig(PluginConfigBase):
-    """关键词过滤设置。"""
-    
     __ui_label__: ClassVar[str] = "关键词过滤"
     __ui_order__: ClassVar[int] = 3
-    
-    keyword_filter_enabled: bool = Field(
-        default=False,
-        description="是否启用关键词过滤",
-        json_schema_extra={
-            "label": "启用关键词过滤",
-            "hint": "启用后，包含指定关键词的消息不会被转发",
-            "i18n": _schema_i18n(
-                label_en="Enable keyword filter",
-                label_ja="キーワードフィルターを有効化",
-                hint_en="When enabled, messages containing specified keywords will not be forwarded",
-                hint_ja="有効にすると、指定されたキーワードを含むメッセージは転送されません",
-            ),
-            "order": 0,
-        },
-    )
-    
-    filtered_keywords: List[str] = Field(
-        default_factory=list,
-        description="过滤关键词列表",
-        json_schema_extra={
-            "label": "过滤关键词",
-            "hint": "包含这些关键词的消息不会被转发",
-            "i18n": _schema_i18n(
-                label_en="Filtered keywords",
-                label_ja="フィルターキーワード",
-                hint_en="Messages containing these keywords will not be forwarded",
-                hint_ja="これらのキーワードを含むメッセージは転送されません",
-                placeholder_en="Enter keyword",
-                placeholder_ja="キーワードを入力",
-            ),
-            "order": 1,
-        },
-    )
+    keyword_filter_enabled: bool = Field(default=False, description="启用关键词过滤",
+        json_schema_extra={"label": "启用关键词过滤", "order": 0})
+    filtered_keywords: List[str] = Field(default_factory=list,
+        description="包含这些关键词的消息不触发流转",
+        json_schema_extra={"label": "过滤关键词", "placeholder": "输入关键词", "order": 1})
 
+class LLMSettingsConfig(PluginConfigBase):
+    __ui_label__: ClassVar[str] = "LLM与历史设置"
+    __ui_order__: ClassVar[int] = 4
+    enabled: bool = Field(default=True, description="启用LLM生成回复",
+        json_schema_extra={"label": "启用LLM", "order": 0})
+    history_limit: int = Field(default=20, ge=1, le=100, description="获取最近消息数量",
+        json_schema_extra={"label": "历史消息数量", "order": 1})
+    include_forwarded_messages: bool = Field(default=False,
+        description="是否包含已经被流转的消息",
+        json_schema_extra={"label": "包含流转消息", "order": 2})
+    llm_prompt: str = Field(default="基于以下对话历史...", description="LLM提示词",
+        json_schema_extra={"label": "LLM提示词", "widget": "textarea", "order": 3})
+
+class TriggerConfig(PluginConfigBase):
+    __ui_label__: ClassVar[str] = "触发条件"
+    __ui_order__: ClassVar[int] = 5
+    require_same_user_recent: bool = Field(default=True,
+        description="要求目标流中最近有相同用户发言",
+        json_schema_extra={"label": "要求相同用户近期发言", "order": 0})
+    same_user_recent_limit: int = Field(default=10, ge=1, le=50,
+        description="检查最近多少条消息中存在相同用户",
+        json_schema_extra={"label": "检查消息数", "order": 1})
+    same_user_recent_time_window: int = Field(default=300, ge=0,
+        description="时间窗口（秒），0表示不限",
+        json_schema_extra={"label": "时间窗口(秒)", "order": 2})
+    action_cooldown_seconds: int = Field(default=60, ge=5,
+        description="每个流的动作冷却时间",
+        json_schema_extra={"label": "冷却时间(秒)", "order": 3})
 
 class ReplyConfig(PluginConfigBase):
-    """回复消息设置。"""
-    
-    __ui_label__: ClassVar[str] = "回复消息设置"
-    __ui_order__: ClassVar[int] = 4
-    
-    forward_reply: bool = Field(
-        default=True,
-        description="是否转发回复消息",
-        json_schema_extra={
-            "label": "转发回复消息",
-            "hint": "是否转发回复类型的消息",
-            "i18n": _schema_i18n(
-                label_en="Forward reply messages",
-                label_ja="返信メッセージを転送",
-                hint_en="Whether to forward reply-type messages",
-                hint_ja="返信タイプのメッセージを転送するかどうか",
-            ),
-            "order": 0,
-        },
-    )
-
+    __ui_label__: ClassVar[str] = "回复设置"
+    __ui_order__: ClassVar[int] = 6
+    forward_reply: bool = Field(default=True, description="是否转发回复消息作为上下文",
+        json_schema_extra={"label": "包含回复消息", "order": 0})
 
 class WatchYourStreamConfig(PluginConfigBase):
-    """配置大纲"""
     basic: BasicConfig = Field(default_factory=BasicConfig)
     whitelist_streams: WhitelistStreamsConfig = Field(default_factory=WhitelistStreamsConfig)
     user_whitelist: UserWhitelistConfig = Field(default_factory=UserWhitelistConfig)
     keyword_filter: KeywordFilterConfig = Field(default_factory=KeywordFilterConfig)
+    llm_settings: LLMSettingsConfig = Field(default_factory=LLMSettingsConfig)
+    trigger: TriggerConfig = Field(default_factory=TriggerConfig)
     reply: ReplyConfig = Field(default_factory=ReplyConfig)
 
 
@@ -203,300 +123,253 @@ class WatchYourStreamConfig(PluginConfigBase):
 # 插件主体
 # ============================================================================
 class WatchYourStreamPlugin(MaiBotPlugin):
-    """聊天流转插件主类"""
+    """跨群话题流转插件 - 自动将同一用户的发言在多个群聊间延续话题"""
+    
+    def __init__(self):
+        super().__init__()
+        self._action_locks: Dict[str, float] = {}  # stream_id -> last_action_time
+        self._processing: Dict[str, bool] = {}     # 防止并发处理同一流
     
     async def on_load(self) -> None:
-        """插件加载时的回调"""
-        # 初始化内部状态
-        # 加载配置
-        # 初始化流转队列
-        # 记录日志
-        pass
+        self.ctx.logger.info("[聊天流转] 插件加载")
+        # 清理过期锁
+        asyncio.create_task(self._cleanup_locks_loop())
     
     async def on_unload(self) -> None:
-        """插件卸载时的回调"""
-        # 清理资源
-        # 保存状态
-        # 记录日志
-        pass
+        self.ctx.logger.info("[聊天流转] 插件卸载")
     
     async def on_config_update(self, scope: str, config_data: dict, version: str) -> None:
-        """配置更新时的回调"""
-        # 当 scope == "self" 时，self.config 已自动更新
-        # 重新加载配置
-        # 记录日志
-        pass
+        if scope == "self":
+            self.ctx.logger.info("[聊天流转] 配置已更新")
+    
+    async def _cleanup_locks_loop(self):
+        """定期清理过期的动作锁"""
+        while True:
+            await asyncio.sleep(30)
+            now = time.time()
+            cooldown = self.config.trigger.action_cooldown_seconds
+            expired = [sid for sid, ts in self._action_locks.items() if now - ts >= cooldown]
+            for sid in expired:
+                self._action_locks.pop(sid, None)
+                self._processing.pop(sid, None)
+    
+    def _is_locked(self, stream_id: str) -> bool:
+        """检查流是否处于冷却中"""
+        if stream_id not in self._action_locks:
+            return False
+        cooldown = self.config.trigger.action_cooldown_seconds
+        if time.time() - self._action_locks[stream_id] >= cooldown:
+            self._action_locks.pop(stream_id, None)
+            self._processing.pop(stream_id, None)
+            return False
+        return True
+    
+    def _lock_stream(self, stream_id: str):
+        """锁定流，避免重复触发"""
+        self._action_locks[stream_id] = time.time()
+        self._processing[stream_id] = True
+    
+    def _unlock_stream(self, stream_id: str):
+        """解锁流"""
+        self._processing.pop(stream_id, None)
+        # 锁保留用于冷却判断，不清除
+    
+    async def _check_user_in_recent_messages(self, stream_id: str, user_id: str) -> bool:
+        """检查目标流最近N条消息中是否有相同用户发言"""
+        cfg = self.config.trigger
+        limit = cfg.same_user_recent_limit
+        time_window = cfg.same_user_recent_time_window
+        
+        try:
+            messages = await self.ctx.message.get_recent(stream_id, limit=limit)
+            if not messages:
+                return False
+            
+            now = time.time()
+            for msg in messages:
+                # 提取消息时间戳（假设消息对象有 timestamp 字段）
+                msg_ts = msg.get("timestamp", 0)
+                if time_window > 0 and (now - msg_ts) > time_window:
+                    continue
+                msg_user = msg.get("user_info", {}).get("user_id", "")
+                if msg_user == user_id:
+                    return True
+            return False
+        except Exception as e:
+            self.ctx.logger.error(f"[聊天流转] 检查最近消息失败 {stream_id}: {e}")
+            return False
+    
+    async def _build_history_context(self, stream_id: str, current_message: str, source_user: str) -> str:
+        """获取历史消息并格式化为提示词中的历史部分"""
+        cfg = self.config.llm_settings
+        limit = cfg.history_limit
+        try:
+            messages = await self.ctx.message.get_recent(stream_id, limit=limit)
+            if not messages:
+                return "（无历史消息）"
+            
+            lines = []
+            for msg in reversed(messages):  # 从旧到新排序
+                # 可选过滤转发消息
+                if not cfg.include_forwarded_messages:
+                    # 简单判断：如果消息包含转发的标记，跳过（根据实际消息结构实现）
+                    pass
+                user_info = msg.get("user_info", {})
+                user_name = user_info.get("nickname") or user_info.get("user_name") or user_info.get("user_id", "未知")
+                content = msg.get("raw_message", "") or msg.get("content", "")
+                lines.append(f"[{user_name}]: {content}")
+            
+            history_text = "\n".join(lines)
+            return history_text if history_text else "（无历史消息）"
+        except Exception as e:
+            self.ctx.logger.error(f"[聊天流转] 构建历史上下文失败: {e}")
+            return "（获取历史失败）"
+    
+    async def _generate_reply(self, history: str, current_message: str, source_user: str) -> Optional[str]:
+        """调用LLM生成接话"""
+        cfg = self.config.llm_settings
+        if not cfg.enabled:
+            return None
+        prompt = cfg.llm_prompt.format(
+            history=history,
+            current_message=current_message,
+            source_user=source_user
+        )
+        try:
+            result = await self.ctx.llm.generate(prompt=prompt, temperature=0.7, max_tokens=150)
+            if result.get("success"):
+                reply = result.get("response", "").strip()
+                if reply:
+                    return reply
+            return None
+        except Exception as e:
+            self.ctx.logger.error(f"[聊天流转] LLM生成失败: {e}")
+            return None
+    
+    async def _should_trigger_for_stream(self, target_stream: str, source_user: str, current_message: str) -> bool:
+        """判断是否应该对目标流触发流转"""
+        # 检查冷却
+        if self._is_locked(target_stream):
+            return False
+        # 检查是否需要相同用户近期发言
+        if self.config.trigger.require_same_user_recent:
+            if not await self._check_user_in_recent_messages(target_stream, source_user):
+                return False
+        # 其他条件（关键词过滤已在主流程中完成）
+        return True
+    
+    async def _perform_flow(self, target_stream: str, source_stream: str, source_user: str, current_message: str):
+        """执行流转：获取上下文，生成回复，发送"""
+        self._lock_stream(target_stream)
+        try:
+            # 获取历史
+            history = await self._build_history_context(target_stream, current_message, source_user)
+            # 生成回复
+            reply = await self._generate_reply(history, current_message, source_user)
+            if not reply:
+                self.ctx.logger.info(f"[聊天流转] 目标流 {target_stream} LLM未生成回复")
+                return
+            # 发送
+            await self.ctx.send.text(reply, target_stream)
+            self.ctx.logger.info(f"[聊天流转] 已向 {target_stream} 发送接话: {reply[:50]}")
+        except Exception as e:
+            self.ctx.logger.error(f"[聊天流转] 流转失败 {target_stream}: {e}")
+        finally:
+            self._unlock_stream(target_stream)
     
     # ========================================================================
-    # EventHandler 方法
+    # EventHandler 核心处理
     # ========================================================================
-    
     @EventHandler(
         "on_message_handler",
-        description="处理收到的消息并进行流转",
+        description="处理消息并触发跨群流转",
         event_type=EventType.ON_MESSAGE,
+        intercept_message=False,
+        weight=10,
     )
     async def on_message_received(self, message: dict, **kwargs) -> dict:
-        """
-        消息接收事件处理器
+        # 1. 检查插件启用
+        if not self.config.basic.enabled:
+            return {"intercepted": False}
         
-        功能：
-        1. 检查插件是否启用
-        2. 获取消息的聊天流ID和用户ID
-        3. 检查消息来源是否在聊天流白名单中
-        4. 检查用户是否在用户白名单中
-        5. 检查消息是否包含过滤关键词
-        6. 检查是否为回复消息（根据配置决定是否转发）
-        7. 将符合条件的消息转发到白名单中的其他聊天流（排除来源）
-        """
-        pass
+        # 2. 获取消息基本信息
+        stream_id = message.get("stream_id", "")
+        if not stream_id:
+            return {"intercepted": False}
+        user_info = message.get("user_info", {})
+        user_id = user_info.get("user_id", "")
+        if not user_id:
+            return {"intercepted": False}
+        raw_message = message.get("raw_message", "") or message.get("content", "")
+        if not raw_message:
+            return {"intercepted": False}
+        
+        # 3. 用户白名单检查
+        if self.config.user_whitelist.user_whitelist_enabled:
+            if user_id in self.config.user_whitelist.whitelist_users:
+                self.ctx.logger.debug(f"[聊天流转] 用户 {user_id} 在白名单中，跳过")
+                return {"intercepted": False}
+        
+        # 4. 关键词过滤
+        if self.config.keyword_filter.keyword_filter_enabled:
+            keywords = self.config.keyword_filter.filtered_keywords
+            if any(kw in raw_message for kw in keywords):
+                self.ctx.logger.debug(f"[聊天流转] 消息包含过滤关键词，跳过")
+                return {"intercepted": False}
+        
+        # 5. 获取白名单聊天流列表
+        whitelist = self.config.whitelist_streams.whitelist_streams
+        if not whitelist:
+            return {"intercepted": False}
+        
+        # 当前流是否在白名单中（不在白名单则不处理）
+        if stream_id not in whitelist:
+            return {"intercepted": False}
+        
+        # 6. 遍历白名单中的其他流，尝试触发
+        tasks = []
+        for target in whitelist:
+            if target == stream_id:
+                continue
+            if await self._should_trigger_for_stream(target, user_id, raw_message):
+                # 异步执行，不阻塞主流程
+                tasks.append(self._perform_flow(target, stream_id, user_id, raw_message))
+        
+        if tasks:
+            asyncio.gather(*tasks)
+        
+        return {"intercepted": False}
     
     # ========================================================================
-    # Command 方法
+    # Command 命令
     # ========================================================================
-    
     @Command("watch_status", description="查看聊天流转状态", pattern=r"^/watch_status$")
-    async def handle_watch_status(self, **kwargs):
-        """
-        查看聊天流转插件状态
-        
-        功能：
-        1. 获取当前配置状态
-        2. 返回聊天流白名单列表
-        3. 返回用户白名单/关键词过滤状态
-        4. 记录日志
-        """
-        pass
+    async def handle_status(self, **kwargs):
+        stream_id = kwargs.get("stream_id", "")
+        cfg = self.config
+        status_lines = [
+            f"插件状态: {'启用' if cfg.basic.enabled else '禁用'}",
+            f"白名单流: {len(cfg.whitelist_streams.whitelist_streams)} 个",
+            f"用户白名单: {'启用' if cfg.user_whitelist.user_whitelist_enabled else '禁用'}",
+            f"关键词过滤: {'启用' if cfg.keyword_filter.keyword_filter_enabled else '禁用'}",
+            f"LLM生成: {'启用' if cfg.llm_settings.enabled else '禁用'}",
+            f"历史消息数: {cfg.llm_settings.history_limit}",
+            f"冷却时间: {cfg.trigger.action_cooldown_seconds}秒",
+        ]
+        await self.ctx.send.text("\n".join(status_lines), stream_id)
+        return True, "状态已发送", 1
     
     @Command("watch_test", description="测试聊天流转", pattern=r"^/watch_test$")
-    async def handle_watch_test(self, **kwargs):
-        """
-        测试聊天流转
-        
-        功能：
-        1. 获取当前聊天流ID
-        2. 发送测试消息到白名单中的其他聊天流
-        3. 记录日志
-        """
-        pass
-    
-    # ========================================================================
-    # Tool 方法
-    # ========================================================================
-    
-    @Tool(
-        "get_whitelist_streams",
-        brief_description="获取聊天流白名单列表",
-        detailed_description="返回当前配置中允许参与流转的聊天流ID列表（白名单）",
-    )
-    async def tool_get_whitelist_streams(self, **kwargs) -> dict:
-        """
-        获取聊天流白名单列表
-        
-        返回：
-        - success: 是否成功
-        - streams: 白名单聊天流ID列表
-        - count: 聊天流数量
-        """
-        pass
-    
-    @Tool(
-        "check_user_in_whitelist",
-        brief_description="检查用户是否在用户白名单中",
-        detailed_description="根据用户ID判断该用户是否在用户白名单中",
-        parameters=[
-            ToolParameterInfo(
-                name="user_id",
-                param_type=ToolParamType.STRING,
-                description="用户ID",
-                required=True,
-            ),
-        ],
-    )
-    async def tool_check_user_whitelist(self, user_id: str, **kwargs) -> dict:
-        """
-        检查用户是否在用户白名单中
-        
-        参数：
-        - user_id: 用户ID
-        
-        返回：
-        - in_whitelist: 是否在白名单中
-        - user_whitelist_enabled: 用户白名单是否启用
-        """
-        pass
-    
-    @Tool(
-        "check_keywords_in_message",
-        brief_description="检查消息是否包含过滤关键词",
-        detailed_description="检查消息文本中是否包含配置的过滤关键词",
-        parameters=[
-            ToolParameterInfo(
-                name="message_text",
-                param_type=ToolParamType.STRING,
-                description="消息文本内容",
-                required=True,
-            ),
-        ],
-    )
-    async def tool_check_keywords(self, message_text: str, **kwargs) -> dict:
-        """
-        检查消息是否包含过滤关键词
-        
-        参数：
-        - message_text: 消息文本内容
-        
-        返回：
-        - contains_keywords: 是否包含关键词
-        - matched_keywords: 匹配到的关键词列表
-        - keyword_filter_enabled: 关键词过滤是否启用
-        """
-        pass
-    
-    @Tool(
-        "get_stream_info",
-        brief_description="获取聊天流信息",
-        detailed_description="根据聊天流ID获取该聊天流的详细信息",
-        parameters=[
-            ToolParameterInfo(
-                name="stream_id",
-                param_type=ToolParamType.STRING,
-                description="聊天流ID",
-                required=True,
-            ),
-        ],
-    )
-    async def tool_get_stream_info(self, stream_id: str, **kwargs) -> dict:
-        """
-        获取聊天流信息
-        
-        参数：
-        - stream_id: 聊天流ID
-        
-        返回：
-        - success: 是否成功
-        - stream_info: 聊天流详细信息（平台、类型、名称等）
-        """
-        pass
-    
-    @Tool(
-        "forward_message_to_streams",
-        brief_description="转发消息到指定聊天流",
-        detailed_description="将消息内容转发到指定的聊天流（目标必须在白名单中）",
-        parameters=[
-            ToolParameterInfo(
-                name="target_stream_id",
-                param_type=ToolParamType.STRING,
-                description="目标聊天流ID",
-                required=True,
-            ),
-            ToolParameterInfo(
-                name="message_content",
-                param_type=ToolParamType.STRING,
-                description="要转发的消息内容",
-                required=True,
-            ),
-            ToolParameterInfo(
-                name="source_info",
-                param_type=ToolParamType.STRING,
-                description="来源信息（可选）",
-                required=False,
-            ),
-        ],
-    )
-    async def tool_forward_message_to_streams(
-        self,
-        target_stream_id: str,
-        message_content: str,
-        source_info: str = "",
-        **kwargs
-    ) -> dict:
-        """
-        转发消息到指定聊天流
-        
-        参数：
-        - target_stream_id: 目标聊天流ID
-        - message_content: 要转发的消息内容
-        - source_info: 来源信息（可选）
-        
-        返回：
-        - success: 是否成功
-        - message: 结果消息
-        """
-        pass
-    
-    # ========================================================================
-    # HookHandler 方法
-    # ========================================================================
-    
-    @HookHandler(
-        "chat.receive.before_process",
-        name="message_flow_interceptor",
-        description="消息流转拦截器，在消息处理前决定是否拦截",
-        mode=HookMode.BLOCKING,
-        order=HookOrder.EARLY,
-        error_policy=ErrorPolicy.SKIP,
-    )
-    async def hook_before_process(self, **kwargs) -> dict:
-        """
-        消息处理前的拦截钩子
-        
-        功能：
-        1. 检查插件是否启用
-        2. 判断当前消息是否需要流转处理（来源是否在白名单中）
-        3. 可选：阻止消息继续处理（根据配置）
-        
-        返回：
-        - action: "continue" 或 "abort"
-        - modified_kwargs: 修改后的参数
-        """
-        pass
-    
-    @HookHandler(
-        "send_service.before_send",
-        name="forward_send_interceptor",
-        description="转发消息发送拦截器",
-        mode=HookMode.BLOCKING,
-        order=HookOrder.NORMAL,
-        error_policy=ErrorPolicy.SKIP,
-    )
-    async def hook_before_send(self, **kwargs) -> dict:
-        """
-        发送消息前的拦截钩子
-        
-        功能：
-        1. 检查当前发送是否为转发消息
-        2. 记录转发日志
-        3. 可选：修改发送参数
-        
-        返回：
-        - action: "continue" 或 "abort"
-        - modified_kwargs: 修改后的参数
-        """
-        pass
-    
-    @HookHandler(
-        "chat.command.after_execute",
-        name="command_logger",
-        description="命令执行后记录日志",
-        mode=HookMode.OBSERVE,
-        order=HookOrder.LATE,
-    )
-    async def hook_after_command(self, **kwargs) -> None:
-        """
-        命令执行后的观察钩子
-        
-        功能：
-        1. 记录命令执行日志
-        2. 统计命令使用情况
-        """
-        pass
+    async def handle_test(self, **kwargs):
+        stream_id = kwargs.get("stream_id", "")
+        await self.ctx.send.text("[聊天流转] 测试消息：如果你在多个群聊中说话，我会尝试帮你延续话题。", stream_id)
+        self.ctx.logger.info(f"[聊天流转] 测试命令触发于 {stream_id}")
+        return True, "测试消息已发送", 1
 
 
 def create_plugin():
-    """创建插件实例"""
     return WatchYourStreamPlugin()
 
 
-# try
+# try3
 #####构建过程详见NOREADME.md#####

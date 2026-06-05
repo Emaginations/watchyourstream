@@ -1,9 +1,9 @@
 {
   "manifest_version": 2,
   "id": "1m.watchyourstream",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "name": "聊天流转",
-  "description": "开启后消息会在允许的聊天流列表中流转",
+  "description": "跨群话题流转插件：当同一用户在多个白名单聊天流中发言时，自动提取上下文并由LLM生成自然接话，实现跨群话题延续。",
   "author": {
     "name": "1m",
     "url": "https://github.com/Emaginations"
@@ -21,27 +21,25 @@
     "max_version": "2.99.99"
   },
   "capabilities": [
-      "send.text",
-      "llm.generate",
-      "message.get_recent",
-      "message.build_readable",
-      "chat.get_stream_by_user_id",
-      "chat.get_all_streams",
-      "chat.get_group_streams",
-      "chat.get_private_streams",
-      "person.get_id",
-      "person.get_value",
-      "message.get_by_time_in_chat",
-      "config.get",
-      "config.get_plugin",
-      "db.get",
-      "db.save",
-      "logger"
-],
-    "i18n": {
+    "send.text",
+    "llm.generate",
+    "message.get_recent",
+    "message.build_readable",
+    "chat.get_stream_by_user_id",
+    "chat.get_all_streams",
+    "chat.get_group_streams",
+    "chat.get_private_streams",
+    "person.get_id",
+    "person.get_value",
+    "message.get_by_time_in_chat",
+    "config.get",
+    "config.get_plugin",
+    "db.get",
+    "db.save",
+    "logger"
+  ],
+  "i18n": {
     "default_locale": "zh-CN",
-    "supported_locales": [
-      "zh-CN"
-    ]
+    "supported_locales": ["zh-CN"]
   }
 }
