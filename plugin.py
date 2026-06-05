@@ -2,6 +2,10 @@
 2026-06-04 try1
 2026-06-05 try2
 2026-06-05 try3
+2026-06-05 try4
+2026-06-05 try5 
+1.使 WebUI 的多语言配置能够正确生效。
+2.增加流转日志 [消息流转]：在 _perform_flow 方法中，成功发送回复后添加如下日志：
 """
 
 from maibot_sdk import API, Field, MaiBotPlugin, MessageGateway, PluginConfigBase, PluginContext, Tool, Command, EventHandler, HookHandler
@@ -23,7 +27,6 @@ def _schema_i18n(
     placeholder_en: Optional[str] = None,
     placeholder_ja: Optional[str] = None,
 ) -> Dict[str, Dict[str, str]]:
-    """构造 WebUI 配置项多语言说明，保留外层中文字段兼容旧格式。"""
     i18n: Dict[str, Dict[str, str]] = {
         "en_US": {"label": label_en},
         "ja_JP": {"label": label_ja},
@@ -100,7 +103,7 @@ class TriggerConfig(PluginConfigBase):
         description="时间窗口（秒），0表示不限",
         json_schema_extra={"label": "时间窗口(秒)", "order": 2})
     action_cooldown_seconds: int = Field(default=60, ge=5,
-        description="每个流的动作冷却时间",
+        description="每个流的动作冷却时间（秒），持久化存储，重启不丢失",
         json_schema_extra={"label": "冷却时间(秒)", "order": 3})
 
 class ReplyConfig(PluginConfigBase):
@@ -123,17 +126,17 @@ class WatchYourStreamConfig(PluginConfigBase):
 # 插件主体
 # ============================================================================
 class WatchYourStreamPlugin(MaiBotPlugin):
-    """跨群话题流转插件 - 自动将同一用户的发言在多个群聊间延续话题"""
+    """跨群话题流转插件 - 自动将同一用户的发言在多个群聊间延续话题（持久化冷却）"""
+    
+    config_model = WatchYourStreamConfig  # 使多语言配置生效
     
     def __init__(self):
         super().__init__()
-        self._action_locks: Dict[str, float] = {}  # stream_id -> last_action_time
-        self._processing: Dict[str, bool] = {}     # 防止并发处理同一流
+        self._processing: Dict[str, bool] = {}     # 内存锁，防止同一流并发处理
     
     async def on_load(self) -> None:
-        self.ctx.logger.info("[聊天流转] 插件加载")
-        # 清理过期锁
-        asyncio.create_task(self._cleanup_locks_loop())
+        self.ctx.logger.info("[聊天流转] 插件加载 (try5 - 持久化冷却 + 流转日志)")
+        self._processing.clear()
     
     async def on_unload(self) -> None:
         self.ctx.logger.info("[聊天流转] 插件卸载")
@@ -142,40 +145,55 @@ class WatchYourStreamPlugin(MaiBotPlugin):
         if scope == "self":
             self.ctx.logger.info("[聊天流转] 配置已更新")
     
-    async def _cleanup_locks_loop(self):
-        """定期清理过期的动作锁"""
-        while True:
-            await asyncio.sleep(30)
-            now = time.time()
-            cooldown = self.config.trigger.action_cooldown_seconds
-            expired = [sid for sid, ts in self._action_locks.items() if now - ts >= cooldown]
-            for sid in expired:
-                self._action_locks.pop(sid, None)
-                self._processing.pop(sid, None)
+    # ------------------------------------------------------------------------
+    # 冷却持久化操作
+    # ------------------------------------------------------------------------
+    async def _get_last_trigger_time(self, stream_id: str) -> float:
+        """从数据库获取该流的上次触发时间戳，如果没有则返回0"""
+        try:
+            result = await self.ctx.db.get(
+                model_name="WatchYourStreamCooldown",
+                filters={"stream_id": stream_id},
+                single_result=True
+            )
+            if result and "last_trigger_time" in result:
+                return float(result["last_trigger_time"])
+            return 0.0
+        except Exception as e:
+            self.ctx.logger.error(f"[聊天流转] 获取冷却记录失败 {stream_id}: {e}")
+            return 0.0
     
-    def _is_locked(self, stream_id: str) -> bool:
-        """检查流是否处于冷却中"""
-        if stream_id not in self._action_locks:
+    async def _set_last_trigger_time(self, stream_id: str, timestamp: float) -> bool:
+        """保存该流的上次触发时间到数据库"""
+        try:
+            await self.ctx.db.save(
+                model_name="WatchYourStreamCooldown",
+                data={"stream_id": stream_id, "last_trigger_time": timestamp},
+                key_field="stream_id",
+                key_value=stream_id
+            )
+            return True
+        except Exception as e:
+            self.ctx.logger.error(f"[聊天流转] 保存冷却记录失败 {stream_id}: {e}")
+            return False
+    
+    async def _is_cooldown_active(self, stream_id: str) -> bool:
+        """检查冷却是否生效（基于持久化时间）"""
+        last_time = await self._get_last_trigger_time(stream_id)
+        if last_time == 0:
             return False
         cooldown = self.config.trigger.action_cooldown_seconds
-        if time.time() - self._action_locks[stream_id] >= cooldown:
-            self._action_locks.pop(stream_id, None)
-            self._processing.pop(stream_id, None)
-            return False
-        return True
+        elapsed = time.time() - last_time
+        return elapsed < cooldown
     
-    def _lock_stream(self, stream_id: str):
-        """锁定流，避免重复触发"""
-        self._action_locks[stream_id] = time.time()
-        self._processing[stream_id] = True
+    async def _update_cooldown(self, stream_id: str):
+        """触发后更新冷却时间"""
+        await self._set_last_trigger_time(stream_id, time.time())
     
-    def _unlock_stream(self, stream_id: str):
-        """解锁流"""
-        self._processing.pop(stream_id, None)
-        # 锁保留用于冷却判断，不清除
-    
+    # ------------------------------------------------------------------------
+    # 辅助方法
+    # ------------------------------------------------------------------------
     async def _check_user_in_recent_messages(self, stream_id: str, user_id: str) -> bool:
-        """检查目标流最近N条消息中是否有相同用户发言"""
         cfg = self.config.trigger
         limit = cfg.same_user_recent_limit
         time_window = cfg.same_user_recent_time_window
@@ -187,7 +205,6 @@ class WatchYourStreamPlugin(MaiBotPlugin):
             
             now = time.time()
             for msg in messages:
-                # 提取消息时间戳（假设消息对象有 timestamp 字段）
                 msg_ts = msg.get("timestamp", 0)
                 if time_window > 0 and (now - msg_ts) > time_window:
                     continue
@@ -200,7 +217,6 @@ class WatchYourStreamPlugin(MaiBotPlugin):
             return False
     
     async def _build_history_context(self, stream_id: str, current_message: str, source_user: str) -> str:
-        """获取历史消息并格式化为提示词中的历史部分"""
         cfg = self.config.llm_settings
         limit = cfg.history_limit
         try:
@@ -209,10 +225,8 @@ class WatchYourStreamPlugin(MaiBotPlugin):
                 return "（无历史消息）"
             
             lines = []
-            for msg in reversed(messages):  # 从旧到新排序
-                # 可选过滤转发消息
+            for msg in reversed(messages):
                 if not cfg.include_forwarded_messages:
-                    # 简单判断：如果消息包含转发的标记，跳过（根据实际消息结构实现）
                     pass
                 user_info = msg.get("user_info", {})
                 user_name = user_info.get("nickname") or user_info.get("user_name") or user_info.get("user_id", "未知")
@@ -226,7 +240,6 @@ class WatchYourStreamPlugin(MaiBotPlugin):
             return "（获取历史失败）"
     
     async def _generate_reply(self, history: str, current_message: str, source_user: str) -> Optional[str]:
-        """调用LLM生成接话"""
         cfg = self.config.llm_settings
         if not cfg.enabled:
             return None
@@ -247,35 +260,41 @@ class WatchYourStreamPlugin(MaiBotPlugin):
             return None
     
     async def _should_trigger_for_stream(self, target_stream: str, source_user: str, current_message: str) -> bool:
-        """判断是否应该对目标流触发流转"""
-        # 检查冷却
-        if self._is_locked(target_stream):
+        if await self._is_cooldown_active(target_stream):
+            self.ctx.logger.debug(f"[聊天流转] 目标流 {target_stream} 处于冷却中，跳过")
             return False
-        # 检查是否需要相同用户近期发言
         if self.config.trigger.require_same_user_recent:
             if not await self._check_user_in_recent_messages(target_stream, source_user):
-                return False
-        # 其他条件（关键词过滤已在主流程中完成）
+                self.ctx.logger.debug(f"[聊天流转] 目标流 {target_stream} 近期无相同用户发言，跳过")
+            return False
         return True
     
     async def _perform_flow(self, target_stream: str, source_stream: str, source_user: str, current_message: str):
-        """执行流转：获取上下文，生成回复，发送"""
-        self._lock_stream(target_stream)
+        """执行流转：获取上下文，生成回复，发送，并更新持久化冷却"""
+        if self._processing.get(target_stream, False):
+            self.ctx.logger.debug(f"[聊天流转] 目标流 {target_stream} 正在处理中，跳过")
+            return
+        self._processing[target_stream] = True
         try:
-            # 获取历史
+            if await self._is_cooldown_active(target_stream):
+                return
+            
             history = await self._build_history_context(target_stream, current_message, source_user)
-            # 生成回复
             reply = await self._generate_reply(history, current_message, source_user)
             if not reply:
                 self.ctx.logger.info(f"[聊天流转] 目标流 {target_stream} LLM未生成回复")
                 return
-            # 发送
+            
             await self.ctx.send.text(reply, target_stream)
-            self.ctx.logger.info(f"[聊天流转] 已向 {target_stream} 发送接话: {reply[:50]}")
+            
+            # 记录流转成功日志（格式：消息流转 + 详情）
+            self.ctx.logger.info(f"[消息流转] 消息已流转！来源流: {source_stream} -> 目标流: {target_stream}, 回复内容: {reply[:50]}")
+            
+            await self._update_cooldown(target_stream)
         except Exception as e:
             self.ctx.logger.error(f"[聊天流转] 流转失败 {target_stream}: {e}")
         finally:
-            self._unlock_stream(target_stream)
+            self._processing[target_stream] = False
     
     # ========================================================================
     # EventHandler 核心处理
@@ -288,11 +307,9 @@ class WatchYourStreamPlugin(MaiBotPlugin):
         weight=10,
     )
     async def on_message_received(self, message: dict, **kwargs) -> dict:
-        # 1. 检查插件启用
         if not self.config.basic.enabled:
             return {"intercepted": False}
         
-        # 2. 获取消息基本信息
         stream_id = message.get("stream_id", "")
         if not stream_id:
             return {"intercepted": False}
@@ -304,35 +321,29 @@ class WatchYourStreamPlugin(MaiBotPlugin):
         if not raw_message:
             return {"intercepted": False}
         
-        # 3. 用户白名单检查
         if self.config.user_whitelist.user_whitelist_enabled:
             if user_id in self.config.user_whitelist.whitelist_users:
                 self.ctx.logger.debug(f"[聊天流转] 用户 {user_id} 在白名单中，跳过")
                 return {"intercepted": False}
         
-        # 4. 关键词过滤
         if self.config.keyword_filter.keyword_filter_enabled:
             keywords = self.config.keyword_filter.filtered_keywords
             if any(kw in raw_message for kw in keywords):
                 self.ctx.logger.debug(f"[聊天流转] 消息包含过滤关键词，跳过")
                 return {"intercepted": False}
         
-        # 5. 获取白名单聊天流列表
         whitelist = self.config.whitelist_streams.whitelist_streams
         if not whitelist:
             return {"intercepted": False}
         
-        # 当前流是否在白名单中（不在白名单则不处理）
         if stream_id not in whitelist:
             return {"intercepted": False}
         
-        # 6. 遍历白名单中的其他流，尝试触发
         tasks = []
         for target in whitelist:
             if target == stream_id:
                 continue
             if await self._should_trigger_for_stream(target, user_id, raw_message):
-                # 异步执行，不阻塞主流程
                 tasks.append(self._perform_flow(target, stream_id, user_id, raw_message))
         
         if tasks:
@@ -354,7 +365,7 @@ class WatchYourStreamPlugin(MaiBotPlugin):
             f"关键词过滤: {'启用' if cfg.keyword_filter.keyword_filter_enabled else '禁用'}",
             f"LLM生成: {'启用' if cfg.llm_settings.enabled else '禁用'}",
             f"历史消息数: {cfg.llm_settings.history_limit}",
-            f"冷却时间: {cfg.trigger.action_cooldown_seconds}秒",
+            f"冷却时间: {cfg.trigger.action_cooldown_seconds}秒 (持久化存储，重启不丢失)",
         ]
         await self.ctx.send.text("\n".join(status_lines), stream_id)
         return True, "状态已发送", 1
@@ -362,7 +373,7 @@ class WatchYourStreamPlugin(MaiBotPlugin):
     @Command("watch_test", description="测试聊天流转", pattern=r"^/watch_test$")
     async def handle_test(self, **kwargs):
         stream_id = kwargs.get("stream_id", "")
-        await self.ctx.send.text("[聊天流转] 测试消息：如果你在多个群聊中说话，我会尝试帮你延续话题。", stream_id)
+        await self.ctx.send.text("[聊天流转] 测试消息：如果你在多个群聊中说话，我会尝试帮你延续话题。冷却记录会持久保存。", stream_id)
         self.ctx.logger.info(f"[聊天流转] 测试命令触发于 {stream_id}")
         return True, "测试消息已发送", 1
 
@@ -371,5 +382,5 @@ def create_plugin():
     return WatchYourStreamPlugin()
 
 
-# try3
+# try5
 #####构建过程详见NOREADME.md#####
