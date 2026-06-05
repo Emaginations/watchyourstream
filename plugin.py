@@ -3,12 +3,11 @@
 2026-06-05 try2
 2026-06-05 try3
 2026-06-05 try4
-2026-06-05 try5 
-1.使 WebUI 的多语言配置能够正确生效。
-2.增加流转日志 [消息流转]：在 _perform_flow 方法中，成功发送回复后添加如下日志：
+2026-06-05 try5
+2026-06-06 try6
 """
 
-from maibot_sdk import API, Field, MaiBotPlugin, MessageGateway, PluginConfigBase, PluginContext, Tool, Command, EventHandler, HookHandler
+from maibot_sdk import API, Field, MaiBotPlugin, MessageGateway, PluginConfigBase, PluginContext, Tool, Command, EventHandler, HookHandler, LLMProvider
 from maibot_sdk.types import EventType, ToolParameterInfo, ToolParamType, HookMode, HookOrder, ErrorPolicy
 from typing import Dict, Optional, ClassVar, List, Any
 import asyncio
@@ -112,7 +111,45 @@ class ReplyConfig(PluginConfigBase):
     forward_reply: bool = Field(default=True, description="是否转发回复消息作为上下文",
         json_schema_extra={"label": "包含回复消息", "order": 0})
 
+# ============================================================================
+# 新增：LLM Provider 配置
+# ============================================================================
+class LLMProviderConfig(PluginConfigBase):
+    """自定义 LLM Provider 设置"""
+    __ui_label__: ClassVar[str] = "自定义 LLM Provider"
+    __ui_order__: ClassVar[int] = 7
+
+    enabled: bool = Field(
+        default=False,
+        description="是否启用插件自带的 LLM Provider（client_type: watchyourstream.provider）",
+        json_schema_extra={"label": "启用自定义 Provider", "order": 0}
+    )
+    api_endpoint: str = Field(
+        default="",
+        description="自定义 LLM API 端点地址",
+        json_schema_extra={"label": "API 端点", "placeholder": "https://api.example.com/v1/chat/completions", "order": 1}
+    )
+    api_key: str = Field(
+        default="",
+        description="API 密钥（可选）",
+        json_schema_extra={"label": "API 密钥", "placeholder": "sk-xxxxxxxx", "order": 2}
+    )
+    model_name: str = Field(
+        default="gpt-3.5-turbo",
+        description="默认模型名称",
+        json_schema_extra={"label": "模型名称", "placeholder": "gpt-3.5-turbo", "order": 3}
+    )
+    timeout_seconds: int = Field(
+        default=30,
+        ge=5,
+        le=120,
+        description="请求超时时间（秒）",
+        json_schema_extra={"label": "超时时间(秒)", "order": 4}
+    )
+
 class WatchYourStreamConfig(PluginConfigBase):
+    __ui_label__: ClassVar[str] = "聊天流转配置"
+    __ui_order__: ClassVar[int] = 0
     basic: BasicConfig = Field(default_factory=BasicConfig)
     whitelist_streams: WhitelistStreamsConfig = Field(default_factory=WhitelistStreamsConfig)
     user_whitelist: UserWhitelistConfig = Field(default_factory=UserWhitelistConfig)
@@ -120,6 +157,7 @@ class WatchYourStreamConfig(PluginConfigBase):
     llm_settings: LLMSettingsConfig = Field(default_factory=LLMSettingsConfig)
     trigger: TriggerConfig = Field(default_factory=TriggerConfig)
     reply: ReplyConfig = Field(default_factory=ReplyConfig)
+    llm_provider: LLMProviderConfig = Field(default_factory=LLMProviderConfig)  # 新增
 
 
 # ============================================================================
@@ -128,14 +166,14 @@ class WatchYourStreamConfig(PluginConfigBase):
 class WatchYourStreamPlugin(MaiBotPlugin):
     """跨群话题流转插件 - 自动将同一用户的发言在多个群聊间延续话题（持久化冷却）"""
     
-    config_model = WatchYourStreamConfig  # 使多语言配置生效
+    config_model = WatchYourStreamConfig
     
     def __init__(self):
         super().__init__()
-        self._processing: Dict[str, bool] = {}     # 内存锁，防止同一流并发处理
+        self._processing: Dict[str, bool] = {}
     
     async def on_load(self) -> None:
-        self.ctx.logger.info("[聊天流转] 插件加载 (try5 - 持久化冷却 + 流转日志)")
+        self.ctx.logger.info("[聊天流转] 插件加载 (try6 - 添加 LLM Provider 框架)")
         self._processing.clear()
     
     async def on_unload(self) -> None:
@@ -145,11 +183,44 @@ class WatchYourStreamPlugin(MaiBotPlugin):
         if scope == "self":
             self.ctx.logger.info("[聊天流转] 配置已更新")
     
+    # ========================================================================
+    # LLM Provider 框架（仅声明，未实现）
+    # ========================================================================
+    @LLMProvider("watchyourstream.provider")
+    async def handle_custom_llm_provider(
+        self,
+        messages: List[Dict[str, str]],
+        model_name: str,
+        temperature: float,
+        max_tokens: int,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        自定义 LLM Provider 处理方法
+        client_type: watchyourstream.provider
+        注意：此方法尚未实现完整逻辑，仅作为框架存在。
+        如需使用，请根据实际 API 实现请求和响应解析。
+        """
+        # 检查插件是否启用该 Provider
+        if not self.config.llm_provider.enabled:
+            raise RuntimeError("自定义 LLM Provider 未在插件配置中启用")
+        
+        # TODO: 实现自定义 LLM 调用逻辑
+        # 可以使用 self.config.llm_provider.api_endpoint, api_key, model_name, timeout_seconds 等配置
+        # 示例：发送 HTTP 请求，解析响应，返回标准格式
+        
+        # 临时占位：返回一个错误提示
+        self.ctx.logger.warning("[聊天流转] 自定义 LLM Provider 被调用但未实现，请实现 handle_custom_llm_provider 方法")
+        return {
+            "success": False,
+            "response": "",
+            "error": "LLM Provider 未实现，请在插件代码中完善 handle_custom_llm_provider 方法"
+        }
+    
     # ------------------------------------------------------------------------
-    # 冷却持久化操作
+    # 冷却持久化操作（原有，不变）
     # ------------------------------------------------------------------------
     async def _get_last_trigger_time(self, stream_id: str) -> float:
-        """从数据库获取该流的上次触发时间戳，如果没有则返回0"""
         try:
             result = await self.ctx.db.get(
                 model_name="WatchYourStreamCooldown",
@@ -164,7 +235,6 @@ class WatchYourStreamPlugin(MaiBotPlugin):
             return 0.0
     
     async def _set_last_trigger_time(self, stream_id: str, timestamp: float) -> bool:
-        """保存该流的上次触发时间到数据库"""
         try:
             await self.ctx.db.save(
                 model_name="WatchYourStreamCooldown",
@@ -178,7 +248,6 @@ class WatchYourStreamPlugin(MaiBotPlugin):
             return False
     
     async def _is_cooldown_active(self, stream_id: str) -> bool:
-        """检查冷却是否生效（基于持久化时间）"""
         last_time = await self._get_last_trigger_time(stream_id)
         if last_time == 0:
             return False
@@ -187,11 +256,10 @@ class WatchYourStreamPlugin(MaiBotPlugin):
         return elapsed < cooldown
     
     async def _update_cooldown(self, stream_id: str):
-        """触发后更新冷却时间"""
         await self._set_last_trigger_time(stream_id, time.time())
     
     # ------------------------------------------------------------------------
-    # 辅助方法
+    # 辅助方法（原有，不变）
     # ------------------------------------------------------------------------
     async def _check_user_in_recent_messages(self, stream_id: str, user_id: str) -> bool:
         cfg = self.config.trigger
@@ -266,11 +334,10 @@ class WatchYourStreamPlugin(MaiBotPlugin):
         if self.config.trigger.require_same_user_recent:
             if not await self._check_user_in_recent_messages(target_stream, source_user):
                 self.ctx.logger.debug(f"[聊天流转] 目标流 {target_stream} 近期无相同用户发言，跳过")
-            return False
+                return False
         return True
     
     async def _perform_flow(self, target_stream: str, source_stream: str, source_user: str, current_message: str):
-        """执行流转：获取上下文，生成回复，发送，并更新持久化冷却"""
         if self._processing.get(target_stream, False):
             self.ctx.logger.debug(f"[聊天流转] 目标流 {target_stream} 正在处理中，跳过")
             return
@@ -286,10 +353,7 @@ class WatchYourStreamPlugin(MaiBotPlugin):
                 return
             
             await self.ctx.send.text(reply, target_stream)
-            
-            # 记录流转成功日志（格式：消息流转 + 详情）
             self.ctx.logger.info(f"[消息流转] 消息已流转！来源流: {source_stream} -> 目标流: {target_stream}, 回复内容: {reply[:50]}")
-            
             await self._update_cooldown(target_stream)
         except Exception as e:
             self.ctx.logger.error(f"[聊天流转] 流转失败 {target_stream}: {e}")
@@ -297,7 +361,7 @@ class WatchYourStreamPlugin(MaiBotPlugin):
             self._processing[target_stream] = False
     
     # ========================================================================
-    # EventHandler 核心处理
+    # EventHandler 核心处理（原有，不变）
     # ========================================================================
     @EventHandler(
         "on_message_handler",
@@ -352,7 +416,7 @@ class WatchYourStreamPlugin(MaiBotPlugin):
         return {"intercepted": False}
     
     # ========================================================================
-    # Command 命令
+    # Command 命令（原有，不变）
     # ========================================================================
     @Command("watch_status", description="查看聊天流转状态", pattern=r"^/watch_status$")
     async def handle_status(self, **kwargs):
@@ -366,6 +430,7 @@ class WatchYourStreamPlugin(MaiBotPlugin):
             f"LLM生成: {'启用' if cfg.llm_settings.enabled else '禁用'}",
             f"历史消息数: {cfg.llm_settings.history_limit}",
             f"冷却时间: {cfg.trigger.action_cooldown_seconds}秒 (持久化存储，重启不丢失)",
+            f"自定义LLM Provider: {'启用' if cfg.llm_provider.enabled else '禁用'}",
         ]
         await self.ctx.send.text("\n".join(status_lines), stream_id)
         return True, "状态已发送", 1
@@ -382,5 +447,5 @@ def create_plugin():
     return WatchYourStreamPlugin()
 
 
-# try5
+# try6
 #####构建过程详见NOREADME.md#####

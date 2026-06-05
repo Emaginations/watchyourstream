@@ -2138,3 +2138,5 @@ class SimplePlugin(MaiBotPlugin):
     ]
   }
 }
+try5-------------------------------------------------------try6
+(深度思考已开启)好的，请生成try+1，只增加新的webui LLM Provider相关的配置，以及provider的框架，无需实现

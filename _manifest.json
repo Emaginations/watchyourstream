@@ -8,13 +8,13 @@
     "name": "1m",
     "url": "https://github.com/Emaginations"
   },
-  "license": "MIT",
+  "license": "GNU General Public License v3.0 (GPLv3)",
   "urls": {
     "repository": "https://github.com/Emaginations/watchyourstream"
   },
   "host_application": {
     "min_version": "1.0.0",
-    "max_version": "1.99.99"
+    "max_version": "1.0.0"
   },
   "sdk": {
     "min_version": "1.0.0",
@@ -37,6 +37,14 @@
     "db.get",
     "db.save",
     "logger"
+  ],
+  "llm_providers": [
+    {
+      "client_type": "watchyourstream.provider",
+      "name": "WatchYourStream LLM Provider",
+      "description": "聊天流转插件提供的LLM Provider，用于跨群话题生成",
+      "version": "1.0.0"
+    }
   ],
   "i18n": {
     "default_locale": "zh-CN",
